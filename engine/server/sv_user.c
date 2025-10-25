@@ -6494,6 +6494,7 @@ void SV_Pext_f(void)
 
 	host_client->fteprotocolextensions = 0;
 	host_client->fteprotocolextensions2 = 0;
+	host_client->fteprotocolextensions2_requested = 0;
 	host_client->ezprotocolextensions1 = 0;
 	for (i = 1; i < Cmd_Argc(); )
 	{
@@ -6505,7 +6506,12 @@ void SV_Pext_f(void)
 			host_client->fteprotocolextensions = strtoul(val, NULL, 0) & Net_PextMask(PROTOCOL_VERSION_FTE1, ISNQCLIENT(host_client)) & PEXT_SERVERADVERTISE;
 			break;
 		case PROTOCOL_VERSION_FTE2:
-			host_client->fteprotocolextensions2 = strtoul(val, NULL, 0) & Net_PextMask(PROTOCOL_VERSION_FTE2, ISNQCLIENT(host_client)) & PEXT2_SERVERADVERTISE;
+		{
+			unsigned int requested = strtoul(val, NULL, 0);
+			unsigned int mask = Net_PextMask(PROTOCOL_VERSION_FTE2, ISNQCLIENT(host_client)) & PEXT2_SERVERADVERTISE;
+			host_client->fteprotocolextensions2_requested = requested;
+			host_client->fteprotocolextensions2 = requested & mask;
+		}
 			break;
 		case PROTOCOL_VERSION_EZQUAKE1:
 			host_client->ezprotocolextensions1 = strtoul(val, NULL, 0) & Net_PextMask(PROTOCOL_VERSION_EZQUAKE1, ISNQCLIENT(host_client)) & EZPEXT1_SERVERADVERTISE;

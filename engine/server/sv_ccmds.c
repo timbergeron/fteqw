@@ -3365,6 +3365,7 @@ void SV_ReallyEvilHack_f(void)
 		cl->state = cs_connected;
 		cl->fteprotocolextensions = 0;
 		cl->fteprotocolextensions2 = 0;
+		cl->fteprotocolextensions2_requested = 0;
 		ClientReliableWrite_Begin	(cl, svc_serverdata, 128);			//svc. dur.
 		ClientReliableWrite_Long	(cl, PROTOCOL_VERSION_QW);			//protocol
 		ClientReliableWrite_Long	(cl, svs.spawncount);				//servercount

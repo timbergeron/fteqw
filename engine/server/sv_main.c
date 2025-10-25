@@ -2187,6 +2187,22 @@ void SV_ClientProtocolExtensionsChanged(client_t *client)
 	client->ezprotocolextensions1  &= Net_PextMask(PROTOCOL_VERSION_EZQUAKE1, ISNQCLIENT(client)) & EZPEXT1_SERVERADVERTISE;
 	client->zquake_extensions &= SERVER_SUPPORTED_Z_EXTENSIONS;
 
+#ifdef NQPROT
+	if (ISNQCLIENT(client))
+	{
+		if (sv_nqplayerphysics.ival && sv_nqplayerphysics.ival != 2)
+		{
+			client->fteprotocolextensions2 &= ~PEXT2_PREDINFO;
+		}
+		else if (client->fteprotocolextensions2_requested & PEXT2_PREDINFO)
+		{
+			unsigned int supported = Net_PextMask(PROTOCOL_VERSION_FTE2, true) & PEXT2_SERVERADVERTISE;
+			if (supported & PEXT2_PREDINFO)
+				client->fteprotocolextensions2 |= PEXT2_PREDINFO;
+		}
+	}
+#endif
+
 	//older versions of fte didn't understand any interactions between ez's limited float support and replacement deltas. so only activate both when vrinputs is also supported.
 	if ((client->ezprotocolextensions1 & EZPEXT1_FLOATENTCOORDS) && (client->fteprotocolextensions2 & PEXT2_REPLACEMENTDELTAS) && !(client->fteprotocolextensions2 & PEXT2_VRINPUTS))
 		client->ezprotocolextensions1 &= ~EZPEXT1_FLOATENTCOORDS;
@@ -2553,6 +2569,7 @@ client_t *SV_AddSplit(client_t *controller, char *info, int id)
 	cl->zquake_extensions = controller->zquake_extensions;
 	cl->fteprotocolextensions = controller->fteprotocolextensions;
 	cl->fteprotocolextensions2 = controller->fteprotocolextensions2;
+	cl->fteprotocolextensions2_requested = controller->fteprotocolextensions2_requested;
 	cl->ezprotocolextensions1 = controller->ezprotocolextensions1;
 	cl->penalties = controller->penalties;
 	cl->protocol = controller->protocol;
@@ -2774,6 +2791,7 @@ void SV_DoDirectConnect(svconnectinfo_t *fte_restrict info)
 	newcl->userid = ++nextuserid;
 	newcl->fteprotocolextensions = info->ftepext1;
 	newcl->fteprotocolextensions2 = info->ftepext2;
+	newcl->fteprotocolextensions2_requested = info->ftepext2;
 	newcl->ezprotocolextensions1 = info->ezpext1;
 	newcl->protocol = info->protocol;
 	newcl->pextknown = info->ftepext1||info->ftepext2||info->ezpext1;

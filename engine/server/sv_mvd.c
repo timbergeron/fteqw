@@ -1632,6 +1632,7 @@ qboolean SV_MVD_Record (mvddest_t *dest)
 //			demo.recorder.fteprotocolextensions |= PEXT_COLOURMOD;	/*nano is working on adding this*/
 //			demo.recorder.fteprotocolextensions |= PEXT_DPFLAGS;	/*nano is working on adding this*/
 			demo.recorder.fteprotocolextensions2 = PEXT2_VOICECHAT;
+			demo.recorder.fteprotocolextensions2_requested = demo.recorder.fteprotocolextensions2;
 			demo.recorder.zquake_extensions = Z_EXT_PM_TYPE | Z_EXT_PM_TYPE_NEW | Z_EXT_VIEWHEIGHT | Z_EXT_SERVERTIME | Z_EXT_PITCHLIMITS | Z_EXT_JOIN_OBSERVE | Z_EXT_VWEP;
 		}
 		else if (sv_demoExtensions.ival)
@@ -1642,6 +1643,7 @@ qboolean SV_MVD_Record (mvddest_t *dest)
 			demo.recorder.fteprotocolextensions |= PEXT_VIEW2;
 #endif
 			demo.recorder.fteprotocolextensions2 = PEXT2_VOICECHAT | PEXT2_SETANGLEDELTA | /*PEXT2_PRYDONCURSOR |*/ (pext_replacementdeltas.ival?PEXT2_REPLACEMENTDELTAS|PEXT2_PREDINFO|PEXT2_NEWSIZEENCODING:0);
+			demo.recorder.fteprotocolextensions2_requested = demo.recorder.fteprotocolextensions2;
 			/*enable these, because we might as well (stat ones are always useful)*/
 			demo.recorder.zquake_extensions = Z_EXT_PM_TYPE | Z_EXT_PM_TYPE_NEW | Z_EXT_VIEWHEIGHT | Z_EXT_SERVERTIME | Z_EXT_PITCHLIMITS | Z_EXT_JOIN_OBSERVE | Z_EXT_VWEP;
 
@@ -1652,6 +1654,7 @@ qboolean SV_MVD_Record (mvddest_t *dest)
 		{
 			demo.recorder.fteprotocolextensions = 0;
 			demo.recorder.fteprotocolextensions2 = 0;
+			demo.recorder.fteprotocolextensions2_requested = 0;
 			demo.recorder.zquake_extensions = Z_EXT_PM_TYPE | Z_EXT_PM_TYPE_NEW | Z_EXT_VIEWHEIGHT | Z_EXT_SERVERTIME | Z_EXT_PITCHLIMITS | Z_EXT_JOIN_OBSERVE | Z_EXT_VWEP;
 		}
 

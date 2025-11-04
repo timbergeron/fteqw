@@ -4938,7 +4938,7 @@ void SV_SetInfo_f (void)
 	else
 		cursize = 0;
 
-	if (key[0] == '*' && !(ISNQCLIENT(host_client) && !host_client->spawned && !strcmp(key, "*ver")))	//nq clients are allowed to set some * keys if ClientConnect wasn't called yet. FIXME: saved games may still be an issue.
+	if (key[0] == '*' && strcmp(key, "*ver"))	//*ver may be changed but other star keys remain locked mid-game. FIXME: saved games may still be an issue.
 		SV_ClientPrintf(host_client, PRINT_HIGH, "setinfo: %s may not be changed mid-game\n", key);
 	else if (sv_userinfo_keylimit.ival >= 0 && host_client->userinfo.numkeys >= sv_userinfo_keylimit.ival && !offset && *val && !InfoBuf_FindKey(&host_client->userinfo, key, &k))	//when the limit is hit, allow people to freely change existing keys, but not new ones. they can also silently remove any that don't exist yet, too.
 		SV_ClientPrintf(host_client, PRINT_MEDIUM, "setinfo: userinfo is limited to %i keys. Ignoring setting %s\n", sv_userinfo_keylimit.ival, key);

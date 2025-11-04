@@ -148,6 +148,9 @@ cvar_t sv_bigcoords			= CVARFD("sv_bigcoords", "1", 0, "Uses floats for coordina
 cvar_t sv_calcphs			= CVARFD("sv_calcphs", "2", CVAR_MAPLATCH, "Enables culling of sound effects. 0=always skip phs. Sounds are globally broadcast. 1=always generate phs. Sounds are always culled. On large maps the phs will be dumped to disk. 2=On large single-player maps, generation of phs is skipped. Otherwise like option 1.");
 
 cvar_t sv_showconnectionlessmessages	= CVARD("sv_showconnectionlessmessages", "0", "Display a line describing each connectionless message that arrives on the server. Primarily a debugging feature, but also potentially useful to admins.");
+cvar_t sv_statusdos_limit	= CVARFD("sv_statusdos_limit", "15", CVAR_ARCHIVE, "Maximum number of status queries permitted from a single address within sv_statusdos_period seconds before throttling.");
+cvar_t sv_statusdos_period	= CVARFD("sv_statusdos_period", "30", CVAR_ARCHIVE, "Time window in seconds used when tracking repeated status queries for the status-DDoS guard.");
+cvar_t sv_statusdos_blocktime	= CVARFD("sv_statusdos_blocktime", "86400", CVAR_ARCHIVE, "How long in seconds an address is blocked from status queries once it exceeds sv_statusdos_limit. Set to 0 to disable long-term blocking.");
 cvar_t sv_cullplayers_trace		= CVARFD("sv_cullplayers_trace", "", CVAR_SERVERINFO, "Attempt to cull player entities using tracelines as an anti-wallhack.");
 cvar_t sv_cullentities_trace	= CVARFD("sv_cullentities_trace", "", CVAR_SERVERINFO, "Attempt to cull non-player entities using tracelines as an extreeme anti-wallhack.");
 cvar_t sv_phs					= CVARD("sv_phs", "1", "If 1, do not use the phs. It is generally better to use sv_calcphs instead, and leave this as 1.");
@@ -4170,77 +4173,84 @@ static struct attacker_s
 } *dosattacker;
 static size_t dosattacker_count;
 static size_t dosattacker_max;
-#define dosattacker_limit 15				//if we get X packets
-#define dosattacker_period 30					//within Y secs
-#define dosattacker_blocktime (60*60*24)	//block them for Z secs (24 hours).
 static qboolean SV_DetectAmplificationDDOS (void)
 {
 	size_t at;
 	double t = Sys_DoubleTime();
 	int as;
-	switch(net_from.type)	//trying to be efficient and avoiding net_comparebaseaddr
-	{
-	case NA_IP:		as = 4;	break;
-	case NA_IPX:	as = 10;break;
-	case NA_IPV6:	as = 16;break;
-	default:		as = 0;	break;
-	}
-	if (as)
-	{
-		for (at = 0; at < dosattacker_count; at++)
-		{	//look for an existing one
-			if (net_from.type != dosattacker->af)
-				continue;
-			if (!memcmp(dosattacker[at].addr, &net_from.address, as))
-			{	//a match.
-				if (t > dosattacker[at].timeout)
-				{	//they survived, for now...
-					dosattacker[at].count = 0;
-					dosattacker[at].timeout = t + dosattacker_period;
-				}
-				if (++dosattacker[at].count >= dosattacker_limit)
-				{
-					if (dosattacker[at].count == dosattacker_limit)
-					{
-						char buf[128];
-						Con_Printf(CON_ERROR "%s: Presumed amplification ddos attack, blocking further status queries.\n", NET_BaseAdrToString(buf, sizeof(buf), &net_from));
-						Q_snprintfz(buf, sizeof(buf), "\xff\xff\xff\xff%cProbable ddos amplification attack\n", A2C_PRINT);
-						NET_SendPacket(svs.sockets, strlen(buf), buf, &net_from);
+	int limit = sv_statusdos_limit.ival;
+	double period = sv_statusdos_period.value;
+	double blocktime = sv_statusdos_blocktime.value;
 
-						dosattacker[at].timeout = t + dosattacker_blocktime;	//a 24 hour block.
-					}
-					else	//extend by a smidge...
-						dosattacker[at].timeout += dosattacker_period/(double)dosattacker_limit;
-					return false;
-				}
-				break;
-			}
+	if (blocktime < 0)
+		blocktime = 0;
+
+	if (limit > 0 && period > 0)
+	{
+		switch(net_from.type)	//trying to be efficient and avoiding net_comparebaseaddr
+		{
+		case NA_IP:		as = 4; break;
+		case NA_IPX:	as = 10;break;
+		case NA_IPV6:	as = 16;break;
+		default:		as = 0; break;
 		}
-		if (at == dosattacker_count)
-		{	//didn't find one
+		if (as)
+		{
 			for (at = 0; at < dosattacker_count; at++)
-			{	//try to find one to recycle
-				if (t > dosattacker[at].timeout)
+			{	//look for an existing one
+				if (net_from.type != dosattacker->af)
+					continue;
+				if (!memcmp(dosattacker[at].addr, &net_from.address, as))
+				{	//a match.
+					if (t > dosattacker[at].timeout)
+					{	//they survived, for now...
+						dosattacker[at].count = 0;
+						dosattacker[at].timeout = t + period;
+					}
+					if (++dosattacker[at].count >= limit)
+					{
+						if (dosattacker[at].count == limit)
+						{
+							char buf[128];
+							Con_Printf(CON_ERROR "%s: Presumed amplification ddos attack, blocking further status queries.\n", NET_BaseAdrToString(buf, sizeof(buf), &net_from));
+							Q_snprintfz(buf, sizeof(buf), "\xff\xff\xff\xff%cProbable ddos amplification attack\n", A2C_PRINT);
+							NET_SendPacket(svs.sockets, strlen(buf), buf, &net_from);
+
+							dosattacker[at].timeout = t + blocktime;	//a 24 hour block.
+						}
+						else	//extend by a smidge...
+							dosattacker[at].timeout += period/(double)limit;
+						return false;
+					}
 					break;
+				}
 			}
 			if (at == dosattacker_count)
-			{
-				if (at == dosattacker_max)
-				{
-					if (at > 4096)	//should we be using hash tables?...
-						at--;	//stomp on the last.
-					else
-					{
-						Z_ReallocElements((void**)&dosattacker, &dosattacker_max, max(16, dosattacker_count * 2), sizeof(dosattacker[0]));
-					}
+			{	//didn't find one
+				for (at = 0; at < dosattacker_count; at++)
+				{	//try to find one to recycle
+					if (t > dosattacker[at].timeout)
+						break;
 				}
-				else
-					at = dosattacker_count++;
+				if (at == dosattacker_count)
+				{
+					if (at == dosattacker_max)
+					{
+						if (at > 4096)	//should we be using hash tables?...
+							at--;	//stomp on the last.
+						else
+						{
+							Z_ReallocElements((void**)&dosattacker, &dosattacker_max, max(16, dosattacker_count * 2), sizeof(dosattacker[0]));
+						}
+					}
+					else
+						at = dosattacker_count++;
+				}
+				dosattacker[at].af = net_from.type;
+				memcpy(dosattacker[at].addr, &net_from.address, as);
+				dosattacker[at].count = 0;
+				dosattacker[at].timeout = t + period;
 			}
-			dosattacker[at].af = net_from.type;
-			memcpy(dosattacker[at].addr, &net_from.address, as);
-			dosattacker[at].count = 0;
-			dosattacker[at].timeout = t + dosattacker_period;
 		}
 	}
 
@@ -5982,6 +5992,9 @@ void SV_InitLocal (void)
 	Cvar_Register (&sv_heartbeat_checks, cvargroup_servercontrol);
 
 	Cvar_Register (&sv_showconnectionlessmessages, cvargroup_servercontrol);
+	Cvar_Register (&sv_statusdos_limit, cvargroup_servercontrol);
+	Cvar_Register (&sv_statusdos_period, cvargroup_servercontrol);
+	Cvar_Register (&sv_statusdos_blocktime, cvargroup_servercontrol);
 	Cvar_Register (&sv_banproxies, cvargroup_serverpermissions);
 #ifdef SV_MASTER
 	Cvar_Register (&sv_master,	cvargroup_servercontrol);

@@ -50,7 +50,7 @@ jobs:
         run: |
           cmake --build build_${{ matrix.profile }} --parallel ${{ steps.cpu-cores.outputs.count }}
 
-      # ===== Added: upload artifacts for ubuntu-latest / Release on push =====
+      # upload build_Release artifacts ONLY for ubuntu-latest Release on push
       - name: Get version
         if: github.event_name == 'push' && matrix.os == 'ubuntu-latest' && matrix.profile == 'Release'
         id: version
@@ -68,10 +68,10 @@ jobs:
             !build_Release/**/*.o
           compression-level: 9
           retention-days: 14
-      # ======================================================================
 
   make:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - name: web
@@ -96,9 +96,13 @@ jobs:
           - name: macos-arm64
             fte_target: SDL2
             make_targets: "gl-rel sv-rel qcc-rel"
-            args: "ARCH=arm STRIPFLAGS="
-            packages: "sdl2"
-            os: macos-latest
+            # IMPORTANT CHANGE:
+            # ARCH=arm was making the build try to cross-compile 32-bit "arm"
+            # and that blew up ogg/vorbis headers (no stdint types).
+            # On Apple Silicon runners we want arm64, not 32-bit arm.
+            args: "ARCH=arm64 STRIPFLAGS="
+            packages: "sdl2 openssl@3 pkg-config"
+            os: macos-14
 
     name: make-${{ matrix.name }}
     runs-on: ${{ matrix.os }}
@@ -114,54 +118,88 @@ jobs:
       - name: Extract versions
         run: grep 'VER=' engine/Makefile | tee makelibs_versions
 
+      # cache the prebuilt libs-<arch> (best effort, don't die if cache svc is cranky)
       - uses: actions/cache@v4
         id: cache
+        continue-on-error: true
         with:
           path: engine/libs-*
           key: ${{ runner.os }}-${{ matrix.fte_target }}-${{ hashFiles('makelibs_versions') }}
 
+      # set up emscripten for the web target
       - uses: mymindstorm/setup-emsdk@v14
+        if: matrix.fte_target == 'web'
+        continue-on-error: true
         with:
           version: "2.0.12"
           actions-cache-folder: "emsdk-cache-2.0.12"
           cache-key: "emsdk-2.0.12"
-        if: matrix.fte_target == 'web'
 
       - name: Verify emscripten
-        run: emcc -v
         if: matrix.fte_target == 'web'
+        run: emcc -v
 
+      # Linux deps (only if we actually defined packages)
       - name: Install dependencies (linux)
-        run: sudo apt-get -qq update && sudo apt-get -qq install --no-install-recommends ${{ matrix.packages }}
-        if: matrix.packages != '' && matrix.os == 'ubuntu-latest'
+        if: matrix.packages && matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get -qq update
+          sudo apt-get -qq install --no-install-recommends ${{ matrix.packages }}
 
-      - name: Install dependencies (macos)
-        run: brew install ${{ matrix.packages }}
-        if: matrix.packages != '' && matrix.os == 'macos-latest'
+      # macOS deps + toolchain env
+      - name: Install dependencies (macOS)
+        if: matrix.packages && (matrix.os == 'macos-14' || matrix.os == 'macos-latest')
+        run: |
+          brew install ${{ matrix.packages }}
 
+      - name: Set up macOS build env
+        if: matrix.os == 'macos-14' || matrix.os == 'macos-latest'
+        run: |
+          echo "BREW_PREFIX=$(brew --prefix)" >> $GITHUB_ENV
+          echo "PKG_CONFIG_PATH=$(brew --prefix)/opt/openssl@3/lib/pkgconfig:$(brew --prefix)/lib/pkgconfig" >> $GITHUB_ENV
+          echo "CPPFLAGS=-I$(brew --prefix)/opt/openssl@3/include" >> $GITHUB_ENV
+          echo "LDFLAGS=-L$(brew --prefix)/opt/openssl@3/lib" >> $GITHUB_ENV
+          echo "SDKROOT=$(xcrun --sdk macosx --show-sdk-path)" >> $GITHUB_ENV
+
+      - name: Verify macOS toolchain
+        if: matrix.os == 'macos-14' || matrix.os == 'macos-latest'
+        run: |
+          pkg-config --cflags --libs sdl2
+          pkg-config --cflags --libs openssl || true
+          echo "ARCH args: ${{ matrix.args }}"
+
+      # build 3rd-party libs only if cache miss
       - name: Build dependencies
-        working-directory: engine
-        run: make FTE_TARGET=${{ matrix.fte_target }} makelibs ${{ matrix.args }}
         if: steps.cache.outputs.cache-hit != 'true'
+        working-directory: engine
+        run: |
+          make FTE_TARGET=${{ matrix.fte_target }} makelibs ${{ matrix.args }}
 
       - uses: ammaraskar/gcc-problem-matcher@0.3.0
 
+      # main build
       - name: Build ${{ matrix.name }}
         working-directory: engine
         run: |
-          make -j ${{ steps.cpu-cores.outputs.count }} FTE_TARGET=${{ matrix.fte_target }} ${{ matrix.make_targets }} ${{ matrix.args }} LINK_EZHUD=1 LINK_OPENSSL=1
+          make -j ${{ steps.cpu-cores.outputs.count }} \
+            FTE_TARGET=${{ matrix.fte_target }} \
+            ${{ matrix.make_targets }} \
+            ${{ matrix.args }} \
+            LINK_EZHUD=1 \
+            LINK_OPENSSL=1
 
+      # macOS readme helper
       - name: Attach macOS docs
+        if: matrix.os == 'macos-14' || matrix.os == 'macos-latest'
         run: |
           cat <<EOF > engine/release/fte_macos.txt
           To allow executables to run issue for example:
           chmod +x fteqw-glsdl2
           xattr -d com.apple.quarantine fteqw-glsdl2
-          
+
           If you don't have SDL2 installed, run:
           brew install sdl2
           EOF
-        if: matrix.os == 'macos-latest'
 
       - name: Get version
         id: version

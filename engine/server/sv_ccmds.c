@@ -2741,8 +2741,11 @@ void SV_Serverinfo_f (void)
 
 				return;
 			}
-		Con_TPrintf ("Can't set * keys\n");
-		return;
+		if (strcmp(Cmd_Argv(1), "*version"))
+		{
+			Con_TPrintf ("Can't set * keys\n");
+			return;
+		}
 	}
 
 	if (!strcmp(Cmd_Argv(0), "serverinfoblob"))
@@ -2770,7 +2773,10 @@ void SV_Serverinfo_f (void)
 			strncat(value, Cmd_Argv(i), sizeof(value)-1);
 		}
 
-		InfoBuf_SetValueForKey (&svs.info, Cmd_Argv(1), value);
+		if (Cmd_Argv(1)[0] == '*')
+			InfoBuf_SetValueForStarKey (&svs.info, Cmd_Argv(1), value);
+		else
+			InfoBuf_SetValueForKey (&svs.info, Cmd_Argv(1), value);
 	}
 
 	// if this is a cvar, change it too

@@ -50,6 +50,26 @@ jobs:
         run: |
           cmake --build build_${{ matrix.profile }} --parallel ${{ steps.cpu-cores.outputs.count }}
 
+      # ===== Added: upload artifacts for ubuntu-latest / Release on push =====
+      - name: Get version
+        if: github.event_name == 'push' && matrix.os == 'ubuntu-latest' && matrix.profile == 'Release'
+        id: version
+        run: echo "short_sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Release artifacts (cmake)
+        if: github.event_name == 'push' && matrix.os == 'ubuntu-latest' && matrix.profile == 'Release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cmake-ubuntu-release-${{ steps.version.outputs.short_sha }}
+          path: |
+            build_Release/**
+            !build_Release/**/CMakeFiles/**
+            !build_Release/**/CMakeCache.txt
+            !build_Release/**/*.o
+          compression-level: 9
+          retention-days: 14
+      # ======================================================================
+
   make:
     strategy:
       matrix:

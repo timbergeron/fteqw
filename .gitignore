@@ -40,3 +40,12 @@ engine/droid/ftekeystore
 engine/droid/proguard-project.txt
 engine/droid/project.properties
 
+# macOS
+.DS_Store
+._*
+# Build
+fteqcc.bin
+fteqcc.x64
+fteqcc.arm64
+fteqcc
+
